@@ -502,12 +502,17 @@ private fun MainShell(
 
 @Composable
 private fun BottomNav(key: String, symbol: String, label: String, selected: String, onSelected: (String) -> Unit) {
-    NavigationBarItem(
-        selected = key == selected,
-        onClick = { onSelected(key) },
-        icon = { Text(symbol, fontFamily = Serif, fontSize = 21.sp) },
-        label = { Text(label, fontSize = 10.sp) }
-    )
+    val isSelected = key == selected
+    Column(
+        Modifier
+            .weight(1f)
+            .clickable { onSelected(key) }
+            .padding(vertical = 8.dp),
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Text(symbol, fontFamily = Serif, fontSize = 21.sp, color = if (isSelected) Brass else Slate)
+        Text(label, fontSize = 10.sp, color = if (isSelected) MaterialTheme.colorScheme.onSurface else Slate)
+    }
 }
 
 @Composable
