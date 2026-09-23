@@ -1345,6 +1345,8 @@ private fun MoreScreen(data: AppData, onDataChange: (AppData) -> Unit, store: St
             Text("Custom lists: " + data.lists.size, color = OldPaper)
         }
 
+        UpdateSection()
+
         SettingsSection("ABOUT", "The Book App · 0.2.0") {
             OutlinedButton(onClick = { showAbout = true }, modifier = Modifier.fillMaxWidth()) { Text("ABOUT THE APP") }
         }
