@@ -23,7 +23,15 @@ gradle assembleDebug
 ## Release
 Push a \`v*\` tag to publish a GitHub Release with the APK.
 
-The current release APK is debug-signed for development testing. A production keystore is required before distributing signed update builds.
+Release APKs are named `The-Book-App-vX.Y.Z.apk`. The in-app updater checks the latest GitHub Release, downloads the APK, and hands it to Android's package installer. Android requires user confirmation and permission to install from this source.
+
+For production updates, all distributed APKs must be signed with the same private release key. The release workflow is ready for these GitHub Actions secrets:
+- `ANDROID_KEYSTORE_BASE64`
+- `ANDROID_KEYSTORE_PASSWORD`
+- `ANDROID_KEY_ALIAS`
+- `ANDROID_KEY_PASSWORD`
+
+The current `v0.2.0` build is still debug-signed, so it should be replaced with a release-signed build before relying on in-place updates.
 
 ## Version 0.2.0
 
