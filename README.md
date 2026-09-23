@@ -24,3 +24,7 @@ gradle assembleDebug
 Push a \`v*\` tag to publish a GitHub Release with the APK.
 
 The current release APK is debug-signed for development testing. A production keystore is required before distributing signed update builds.
+
+## Version 0.2.0
+
+Complete first-pass feature build; tagged releases are created automatically from the release workflow.
