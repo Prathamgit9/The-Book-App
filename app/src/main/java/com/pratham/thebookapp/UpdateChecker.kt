@@ -5,11 +5,14 @@ import android.content.Intent
 import android.net.Uri
 import android.os.Build
 import android.provider.Settings
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.material3.Button
 import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -18,7 +21,12 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.FileProvider
 import kotlinx.coroutines.Dispatchers
@@ -35,8 +43,7 @@ private const val RELEASES_API =
 private data class UpdateInfo(
     val version: String,
     val assetName: String,
-    val assetUrl: String,
-    val releaseUrl: String
+    val assetUrl: String
 )
 
 private sealed interface UpdateState {
@@ -62,81 +69,101 @@ internal fun UpdateSection() {
         }
     }
 
-    SettingsSection(
-        "UPDATES",
-        "The app checks its GitHub Releases feed for a newer version. Android still asks you to confirm the installation."
-    ) {
-        when (val current = state) {
-            UpdateState.Checking -> {
-                Text("Checking for updates…", color = Slate, fontSize = 12.sp)
-                LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
-            }
-
-            UpdateState.Current -> {
-                Text("You're up to date · " + BuildConfig.VERSION_NAME, color = OldPaper)
-                OutlinedButton(
-                    onClick = { state = UpdateState.Checking },
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Text("CHECK AGAIN")
-                }
-            }
-
-            is UpdateState.Available -> {
-                Text(
-                    "Version " + current.info.version + " is available.",
-                    fontFamily = Serif,
-                    fontSize = 18.sp,
-                    fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold
-                )
-                Button(
-                    onClick = { state = UpdateState.Downloading(current.info, 0) },
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Text("DOWNLOAD UPDATE")
-                }
-                Text(
-                    "The APK is downloaded directly from this app's GitHub Release.",
-                    color = Slate,
-                    fontSize = 11.sp
-                )
-            }
-
-            is UpdateState.Downloading -> {
-                Text("Downloading " + current.info.version + "…", color = OldPaper)
-                LinearProgressIndicator(
-                    progress = { current.progress / 100f },
-                    modifier = Modifier.fillMaxWidth()
-                )
-                LaunchedEffect(current.info.version) {
-                    state = try {
-                        val file = downloadApk(context, current.info) { progress ->
-                            state = UpdateState.Downloading(current.info, progress)
-                        }
-                        UpdateState.Ready(current.info, file)
-                    } catch (_: Throwable) {
-                        UpdateState.Error("The update download failed. Please try again.")
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Text("UPDATES", color = MaterialTheme.colorScheme.primary, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+        Text(
+            "The app checks its GitHub Releases feed for a newer version. Android still asks you to confirm the installation.",
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            fontSize = 12.sp
+        )
+        Surface(
+            color = MaterialTheme.colorScheme.surface,
+            shape = RoundedCornerShape(18.dp),
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Column(
+                modifier = Modifier.fillMaxWidth(),
+                verticalArrangement = Arrangement.spacedBy(9.dp)
+            ) {
+                when (val current = state) {
+                    UpdateState.Checking -> {
+                        Text("Checking for updates…", color = MaterialTheme.colorScheme.onSurface, fontSize = 12.sp)
+                        LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
                     }
-                }
-            }
 
-            is UpdateState.Ready -> {
-                Text("Update downloaded and ready to install.", color = OldPaper)
-                Button(
-                    onClick = { installApk(context, current.file) },
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Text("INSTALL UPDATE")
-                }
-            }
+                    UpdateState.Current -> {
+                        Text(
+                            "You're up to date · " + BuildConfig.VERSION_NAME,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                        OutlinedButton(
+                            onClick = { state = UpdateState.Checking },
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text("CHECK AGAIN")
+                        }
+                    }
 
-            is UpdateState.Error -> {
-                Text(current.message, color = Slate)
-                OutlinedButton(
-                    onClick = { state = UpdateState.Checking },
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Text("TRY AGAIN")
+                    is UpdateState.Available -> {
+                        Text(
+                            "Version " + current.info.version + " is available.",
+                            fontFamily = FontFamily.Serif,
+                            fontSize = 18.sp,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                        Button(
+                            onClick = { state = UpdateState.Downloading(current.info, 0) },
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text("DOWNLOAD UPDATE")
+                        }
+                        Text(
+                            "Downloaded directly from this app's GitHub Release.",
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            fontSize = 11.sp
+                        )
+                    }
+
+                    is UpdateState.Downloading -> {
+                        Text(
+                            "Downloading " + current.info.version + "…",
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                        LinearProgressIndicator(
+                            progress = { current.progress / 100f },
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                        LaunchedEffect(current.info.version) {
+                            state = try {
+                                val file = downloadApk(context, current.info) { progress ->
+                                    state = UpdateState.Downloading(current.info, progress)
+                                }
+                                UpdateState.Ready(current.info, file)
+                            } catch (_: Throwable) {
+                                UpdateState.Error("The update download failed. Please try again.")
+                            }
+                        }
+                    }
+
+                    is UpdateState.Ready -> {
+                        Text("Update downloaded and ready to install.", color = MaterialTheme.colorScheme.onSurface)
+                        Button(
+                            onClick = { installApk(context, current.file) },
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text("INSTALL UPDATE")
+                        }
+                    }
+
+                    is UpdateState.Error -> {
+                        Text(current.message, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        OutlinedButton(
+                            onClick = { state = UpdateState.Checking },
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text("TRY AGAIN")
+                        }
+                    }
                 }
             }
         }
@@ -180,8 +207,7 @@ private suspend fun checkForUpdate(): UpdateState = withContext(Dispatchers.IO) 
             UpdateInfo(
                 version = tag,
                 assetName = apk.optString("name").ifBlank { "The-Book-App-v" + tag + ".apk" },
-                assetUrl = apk.optString("browser_download_url"),
-                releaseUrl = release.optString("html_url")
+                assetUrl = apk.optString("browser_download_url")
             )
         )
     }
@@ -207,7 +233,8 @@ private suspend fun downloadApk(
     onProgress: (Int) -> Unit
 ): File = withContext(Dispatchers.IO) {
     val safeName = info.assetName.replace(Regex("[^A-Za-z0-9._-]"), "_")
-    val destination = File(context.cacheDir, safeName)
+    val updateDir = File(context.cacheDir, "updates").apply { mkdirs() }
+    val destination = File(updateDir, safeName)
     if (destination.exists()) destination.delete()
 
     val connection = (URL(info.assetUrl).openConnection() as HttpURLConnection).apply {
