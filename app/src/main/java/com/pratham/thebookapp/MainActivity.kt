@@ -505,7 +505,7 @@ private fun BottomNav(key: String, symbol: String, label: String, selected: Stri
     val isSelected = key == selected
     Column(
         Modifier
-            .weight(1f)
+            .width(72.dp)
             .clickable { onSelected(key) }
             .padding(vertical = 8.dp),
         horizontalAlignment = Alignment.CenterHorizontally
