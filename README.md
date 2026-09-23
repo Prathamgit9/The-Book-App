@@ -1,5 +1,26 @@
 # The Book App
-A personal Android reading journal with a literary old-book aesthetic.
-Includes visual library, Open Library search and covers, reading/TBR/hold/completed/DNF statuses, page progress, dates, notes, ratings and statistics.
-Build: JDK 17 + Gradle 8.9, then gradle assembleDebug.
-Release workflow: push a v* tag.
+
+A personal Android reading journal built around the feeling of an old hardcover book: quiet, literary, and useful.
+
+## Included
+- Home, Library, Lists, Stats and More.
+- Open Library search with covers, ISBN, publisher, year and subjects.
+- Reading, Up Next, TBR, On Hold, Completed and DNF.
+- Book detail pages with progress, dates, notes and ratings.
+- Live reading sessions with automatic history.
+- Custom lists and list membership.
+- Reading goals and six-month page chart.
+- JSON backup export/import.
+- Local-first persistence.
+- GitHub Actions build + tagged release workflow.
+
+## Build
+Use JDK 17 and Gradle 8.9:
+\`\`\`
+gradle assembleDebug
+\`\`\`
+
+## Release
+Push a \`v*\` tag to publish a GitHub Release with the APK.
+
+The current release APK is debug-signed for development testing. A production keystore is required before distributing signed update builds.
