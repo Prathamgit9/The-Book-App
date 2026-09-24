@@ -1504,47 +1504,174 @@ private fun formatEpoch(epoch: Long): String = try {
 }
 
 private suspend fun searchOpenLibrary(query: String): List<Book> = withContext(Dispatchers.IO) {
-    try {
-        val url = URL(
-            "https://openlibrary.org/search.json?q=" + Uri.encode(query) +
-                "&limit=14&fields=key,title,author_name,cover_i,number_of_pages_median,first_publish_year,isbn,publisher,subject"
-        )
-        val connection = (url.openConnection() as HttpURLConnection).apply {
-            connectTimeout = 9000
-            readTimeout = 9000
-            requestMethod = "GET"
-            setRequestProperty("Accept", "application/json")
-        }
-        connection.inputStream.use { stream ->
-            val root = JSONObject(stream.bufferedReader().readText())
-            val docs = root.optJSONArray("docs") ?: return@withContext emptyList()
-            (0 until docs.length()).mapNotNull { i ->
-                val o = docs.optJSONObject(i) ?: return@mapNotNull null
-                val title = o.optString("title").trim()
-                if (title.isBlank()) return@mapNotNull null
-                val authors = o.optJSONArray("author_name")
-                val author = if (authors != null && authors.length() > 0) authors.optString(0) else "Unknown author"
-                val isbns = o.optJSONArray("isbn")
-                val isbn = if (isbns != null && isbns.length() > 0) isbns.optString(0) else ""
-                val coverId = o.optInt("cover_i")
-                val subjects = o.optJSONArray("subject")
-                val genres = if (subjects == null) emptyList() else (0 until minOf(subjects.length(), 6))
-                    .mapNotNull { subjects.optString(it).takeIf(String::isNotBlank) }.distinct()
-                val key = o.optString("key").ifBlank { title + "_" + author + "_" + i }
-                Book(
-                    id = key + "|" + isbn,
-                    title = title,
-                    author = author,
-                    pages = o.optInt("number_of_pages_median"),
-                    cover = if (coverId > 0) "https://covers.openlibrary.org/b/id/" + coverId + "-L.jpg" else "",
-                    isbn = isbn,
-                    publisher = o.optJSONArray("publisher")?.optString(0) ?: "",
-                    published = o.optInt("first_publish_year").takeIf { it > 0 }?.toString() ?: "",
-                    genres = genres
-                )
-            }
-        }
-    } catch (_: Throwable) {
-        emptyList()
+    val cleaned = query.trim()
+    if (cleaned.isBlank()) return@withContext emptyList()
+
+    val results = mutableListOf<Book>()
+    val normalizedIsbn = cleaned.replace("-", "").replace(" ", "")
+    val looksLikeIsbn = normalizedIsbn.length in 10..13 &&
+        normalizedIsbn.all { it.isDigit() || it == 'X' || it == 'x' }
+
+    if (looksLikeIsbn) {
+        fetchJson("https://openlibrary.org/isbn/" + Uri.encode(normalizedIsbn) + ".json")
+            ?.let { parseOpenLibraryEdition(it, normalizedIsbn) }
+            ?.let(results::add)
     }
+
+    fetchJson(
+        "https://openlibrary.org/search.json?q=" +
+            Uri.encode(if (looksLikeIsbn) "isbn:$normalizedIsbn" else cleaned) +
+            "&limit=24&fields=key,title,author_name,cover_i,number_of_pages_median,first_publish_year,isbn,publisher,subject"
+    )?.let { root ->
+        val docs = root.optJSONArray("docs") ?: return@let
+        for (i in 0 until docs.length()) {
+            parseOpenLibrarySearchDoc(docs.optJSONObject(i), i)?.let(results::add)
+        }
+    }
+
+    val googleQuery = if (looksLikeIsbn) "isbn:$normalizedIsbn" else cleaned
+    fetchJson(
+        "https://www.googleapis.com/books/v1/volumes?q=" + Uri.encode(googleQuery) +
+            "&maxResults=20&printType=books"
+    )?.let { root ->
+        val items = root.optJSONArray("items") ?: return@let
+        for (i in 0 until items.length()) {
+            parseGoogleBook(items.optJSONObject(i), i)?.let(results::add)
+        }
+    }
+
+    results
+        .filter { it.title.isNotBlank() }
+        .distinctBy {
+            val isbn = it.isbn.replace("-", "").replace(" ", "").lowercase()
+            if (isbn.isNotBlank()) "isbn:" + isbn
+            else "title:" + it.title.lowercase() + "|author:" + it.author.lowercase()
+        }
+        .take(30)
+}
+
+private fun fetchJson(endpoint: String): JSONObject? = try {
+    val connection = (URL(endpoint).openConnection() as HttpURLConnection).apply {
+        connectTimeout = 9000
+        readTimeout = 9000
+        requestMethod = "GET"
+        setRequestProperty("Accept", "application/json")
+        setRequestProperty("User-Agent", "The-Book-App/0.2.0")
+    }
+    if (connection.responseCode !in 200..299) return null
+    connection.inputStream.use { JSONObject(it.bufferedReader().readText()) }
+} catch (_: Throwable) {
+    null
+}
+
+private fun parseOpenLibraryEdition(o: JSONObject, isbn: String): Book? {
+    val title = o.optString("title").trim()
+    if (title.isBlank()) return null
+    val authors = o.optJSONArray("authors")
+    val author = if (authors != null && authors.length() > 0)
+        authors.optJSONObject(0)?.optString("name").orEmpty().ifBlank { "Unknown author" }
+    else "Unknown author"
+    val covers = o.optJSONArray("covers")
+    val coverId = covers?.optInt(0, 0) ?: 0
+    val subjects = o.optJSONArray("subjects")
+    val genres = if (subjects == null) emptyList() else
+        (0 until minOf(subjects.length(), 8)).mapNotNull {
+            subjects.optJSONObject(it)?.optString("name")?.takeIf(String::isNotBlank)
+        }.distinct()
+    return Book(
+        id = "isbn:" + isbn,
+        title = title,
+        author = author,
+        pages = o.optInt("number_of_pages"),
+        cover = if (coverId > 0) "https://covers.openlibrary.org/b/id/" + coverId + "-L.jpg" else "",
+        isbn = isbn,
+        publisher = o.optJSONArray("publishers")?.optString(0).orEmpty(),
+        published = o.optString("publish_date"),
+        genres = genres
+    )
+}
+
+private fun parseOpenLibrarySearchDoc(o: JSONObject?, index: Int): Book? {
+    if (o == null) return null
+    val title = o.optString("title").trim()
+    if (title.isBlank()) return null
+    val authors = o.optJSONArray("author_name")
+    val author = if (authors != null && authors.length() > 0)
+        authors.optString(0).ifBlank { "Unknown author" }
+    else "Unknown author"
+    val isbns = o.optJSONArray("isbn")
+    val isbn = if (isbns != null && isbns.length() > 0) isbns.optString(0) else ""
+    val coverId = o.optInt("cover_i")
+    val subjects = o.optJSONArray("subject")
+    val genres = if (subjects == null) emptyList() else
+        (0 until minOf(subjects.length(), 8))
+            .mapNotNull { subjects.optString(it).takeIf(String::isNotBlank) }
+            .distinct()
+    val key = o.optString("key").ifBlank { title + "|" + author + "|" + index }
+    return Book(
+        id = key + "|" + isbn,
+        title = title,
+        author = author,
+        pages = o.optInt("number_of_pages_median"),
+        cover = if (coverId > 0) "https://covers.openlibrary.org/b/id/" + coverId + "-L.jpg" else "",
+        isbn = isbn,
+        publisher = o.optJSONArray("publisher")?.optString(0).orEmpty(),
+        published = o.optInt("first_publish_year").takeIf { it > 0 }?.toString().orEmpty(),
+        genres = genres
+    )
+}
+
+private fun parseGoogleBook(item: JSONObject?, index: Int): Book? {
+    val info = item?.optJSONObject("volumeInfo") ?: return null
+    val title = info.optString("title").trim()
+    if (title.isBlank()) return null
+
+    val authors = info.optJSONArray("authors")
+    val author = if (authors != null && authors.length() > 0)
+        authors.optString(0).ifBlank { "Unknown author" }
+    else "Unknown author"
+
+    val identifiers = info.optJSONArray("industryIdentifiers")
+    var isbn = ""
+    if (identifiers != null) {
+        for (i in 0 until identifiers.length()) {
+            val id = identifiers.optJSONObject(i) ?: continue
+            val type = id.optString("type")
+            val value = id.optString("identifier")
+            if (type == "ISBN_13" && value.isNotBlank()) {
+                isbn = value
+                break
+            }
+            if (isbn.isBlank() && value.isNotBlank()) isbn = value
+        }
+    }
+
+    val images = info.optJSONObject("imageLinks")
+    val cover = images?.optString("thumbnail")
+        ?.replace("http://", "https://")
+        ?.takeIf(String::isNotBlank)
+        ?: images?.optString("smallThumbnail")
+            ?.replace("http://", "https://")
+            ?.takeIf(String::isNotBlank)
+            ?: ""
+
+    val categories = info.optJSONArray("categories")
+    val genres = if (categories == null) emptyList() else
+        (0 until minOf(categories.length(), 8))
+            .mapNotNull { categories.optString(it).takeIf(String::isNotBlank) }
+            .distinct()
+
+    val id = item.optString("id").ifBlank { "google:" + title + "|" + author + "|" + index }
+    return Book(
+        id = id + "|" + isbn,
+        title = title,
+        author = author,
+        pages = info.optInt("pageCount"),
+        cover = cover,
+        isbn = isbn,
+        publisher = info.optString("publisher"),
+        published = info.optString("publishedDate"),
+        genres = genres,
+        description = info.optString("description")
+    )
 }
